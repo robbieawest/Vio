@@ -1,10 +1,11 @@
 use ggez::conf::{WindowSetup, WindowMode};
 use ggez::event;
 use ggez::input::keyboard::{ScanCode, KeyboardContext};
-use ggez::graphics::{self, Rect, Color, Text, DrawParam};
+use ggez::graphics::{self, Rect, Color, Text, DrawParam, Mesh, DrawMode};
 use ggez::{Context, GameResult};
 use ggez::glam::*;
 use std::time::Duration;
+use itertools::max;
 
 struct MainState {
     lines: Vec<String>,
@@ -61,10 +62,23 @@ impl MainState {
                                                     (0x0A, '9', '('), (0x0B, '0', ')'), (0x0C, '-', '_'), (0x0D, '=', '+'),
                                                     (0x39, ' ', ' ')
                                                     ];
+
+
         let s = MainState { lines: vec![String::new()],
              cursor_pos: Vec2::new(0.0, 0.0), font_size: 25.0,
-              keys_to_check: keys_check, window_offset: Vec2::new(0.0, 0.0) };
+              keys_to_check: keys_check, window_offset: Vec2::new(0.0, 0.0),
+         };
         Ok(s)
+    }
+
+    fn page_slider_rect(&self, ctx: &Context) -> Rect {
+        let w_size = ctx.gfx.window().inner_size();
+        
+        //Find longest line
+        //let longest_length = max(self.lines.iter().enumerate().map(|s| line_len_px(self.font_size, s.0)));
+
+        Rect::new(50.0 + 0.0, w_size.height as f32 - 10.0,
+                  w_size.width as f32, 10.0)
     }
 
     fn ln(&mut self) -> &mut String {
@@ -204,7 +218,6 @@ impl event::EventHandler<ggez::GameError> for MainState {
             self.ln().insert_str(t_xpos, "    ");
             self.cursor_pos.x += 4.0;
         }
-        ggez::timer::sleep(Duration::from_secs((1.0 / ctx.time.fps() - 1.0 / 60.0) as u64)); // Cap to 60fps
         
         Ok(())
     }
@@ -224,49 +237,12 @@ impl event::EventHandler<ggez::GameError> for MainState {
         else if line_len_px(self.font_size, self.cursor_pos.x as usize ) < self.window_offset.x + 50.0{
             self.window_offset.x -= self.font_size * 0.53; //Conversion constant
         }
+        
 
-        //Draw off limits bar (Where the line number reside)
-        //Has to be before num lines
-        let off_limits_rect = Rect::new(0.0, 0.0, 50.0, 10000000000.0);
-        let off_limits_rect_mash = ggez::graphics::Mesh::new_rectangle(ctx, ggez::graphics::DrawMode::fill()
-                                                                                , off_limits_rect, Color::from_rgb(30, 30, 30))?;
-        canvas.draw(&off_limits_rect_mash, DrawParam::default());
 
         //Draw text-editor interface(lines)
-        let mut overflow_constant: f32 = 0.0;
         for (i, line) in self.lines.iter().enumerate() {
             //Loop through every line and construct text
-          //  let mut line_content: Vec<String> = Vec::new();
-
-            
-          //  recurse_line_seperation(&self, line, RefCell::new(&mut line_content)); //Yikes
-            
-
-            let line_num = Text::new(ggez::graphics::TextFragment {
-                text: (i + 1).to_string(),
-                color: Some(Color::from_rgb(140, 140, 140)),
-                font: Some("LiberationMono-Regular".into()),
-                scale: Some(ggez::graphics::PxScale::from(self.font_size)),
-
-            });
-
-            /*
-            //Convert line_content from Vec<String> to Vec<Text>
-            let line_content: Vec<Text> = line_content.iter()
-                .map(|lin| Text::new(ggez::graphics::TextFragment {
-                    text: lin.clone(),
-                    color: Some(Color::from_rgb(255, 255, 255)),
-                    font: Some("LiberationMono-Regular".into()),
-                    scale: Some(ggez::graphics::PxScale::from(self.fontize)),
-                }))
-                .collect();
-            */
-
-            /*
-            for (extra_line_ind, lc) in line_content.iter().enumerate() {
-                canvas.draw(lc, Vec2::new(50.0, self.fontize * (i + extra_line_ind) as f32));
-            }
-            */
             let line_content = Text::new(ggez::graphics::TextFragment {
                     text: line.clone(),
                     color: Some(Color::from_rgb(255, 255, 255)),
@@ -274,31 +250,49 @@ impl event::EventHandler<ggez::GameError> for MainState {
                     scale: Some(ggez::graphics::PxScale::from(self.font_size)),
             });
             canvas.draw(&line_content, Vec2::new(50.0, self.font_size * i as f32) - self.window_offset);
-            canvas.draw(&line_num, Vec2::new(0.0, self.font_size * i as f32 + overflow_constant));
         }
 
-        //Draw cursor
-     //   let rect = Rect::new(transIndexWidth(text_vec[self.cursor_pos.y as usize].clone(), self.cursor_pos.x as usize), 
-      //  15.0 * self.cursor_pos.y, 2.0, 15.0);
-       // let seperator = Rect::new(50.0, 0.0, 2.0, 1080.0);
-     //   let seperator_mesh = ggez::graphics::Mesh::new_rectangle(ctx,
-             //ggez::graphics::DrawMode::fill(),seperator, Color::from_rgb(180, 180, 180))?;             
-
-
-
-        let window = ctx.gfx.window();
-        
         //Cursor
         let mut rect = Rect::new(line_len_px(self.font_size, self.cursor_pos.x as usize), //fix
-             self.font_size * self.cursor_pos.y + overflow_constant, 2.0, self.font_size);
+             self.font_size * self.cursor_pos.y, 2.0, self.font_size);
         rect.x -= self.window_offset.x;
         rect.y -= self.window_offset.y;
 
-        let rect_mesh = ggez::graphics::Mesh::new_rectangle(ctx, ggez::graphics::DrawMode::fill(),
-                                                                      rect, Color::from_rgb(255, 255, 255))?;
+        let rect_mesh = Mesh::new_rectangle(ctx, DrawMode::fill(),
+                                          rect, Color::from_rgb(255, 255, 255))?;
 
+        //Draw off limits bar (Where the line number reside)
+        //Has to be before num lines
+        let off_limits_rect = Rect::new(0.0, 0.0, 50.0, 10000000000.0);
+        let off_limits_rect_mash = Mesh::new_rectangle(ctx, DrawMode::fill(),
+                                                            off_limits_rect, Color::from_rgb(30, 30, 30))?;
+        canvas.draw(&off_limits_rect_mash, DrawParam::default());
+        //Draw line numbers
+        for (i, _) in self.lines.iter().enumerate() {
+
+            let line_num = Text::new(ggez::graphics::TextFragment {
+                text: (i + 1).to_string(),
+                color: Some(Color::from_rgb(140, 140, 140)),
+                font: Some("LiberationMono-Regular".into()),
+                scale: Some(ggez::graphics::PxScale::from(self.font_size)),
+            });
+
+            canvas.draw(&line_num, Vec2::new(0.0, self.font_size * i as f32));
+        }
+
+        //Draw page slider
+        let w_size = ctx.gfx.window().inner_size();
+        let page_slider_mesh = Mesh::new_rectangle(ctx, DrawMode::fill(),
+                                                    self.page_slider_rect(ctx), Color::from_rgb(120, 120, 120))?;
+                                                                        
+        canvas.draw(&page_slider_mesh, DrawParam::default());
         canvas.draw(&rect_mesh, DrawParam::default());
         canvas.finish(ctx)?;
+
+        //Does not work fully, only caps to ~97fps, why???
+        //println!("{}", ctx.time.fps());
+        ggez::timer::sleep(Duration::from_micros(((1.0 / 60.0 - 1.0 / ctx.time.fps()) * 1000000.0) as u64)); // Cap to 60fps
+
         Ok(())
     }
 }
@@ -307,9 +301,9 @@ pub fn main() -> GameResult {
     let mut cb = ggez::ContextBuilder::new("Vio", "Robert West");
 
     cb = cb.window_setup(WindowSetup {
-        title: "Vio, Strange Vi".to_string(),
+        title: "New file - Vio".to_string(),
         samples: ggez::conf::NumSamples::One,
-        vsync: true,
+        vsync: false,
         icon: "".to_string(),
         srgb: true
     });
