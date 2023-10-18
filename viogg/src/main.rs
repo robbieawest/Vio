@@ -29,15 +29,20 @@ impl DirectoryNode {
         Self {entry: ent, children: Vec::new(), opened: false, metadata: fs::metadata(p).unwrap(), click_rect: Rect::new(0.0, 0.0, 0.0, 0.0)}
     }
 
-    fn open(&mut self) -> GameResult<()>{
+    fn open(&mut self) -> GameResult<bool>{
         self.opened = true;
         //populate children from whats after entry
+        let mut result: bool = false;
         self.children = match initialise_directory(self.entry.path()) {
             Ok(res) => res,
-            _ => Vec::new(),
+            _ => {
+                //File is opened
+                result = true;
+                Vec::new()
+            }
         };
 
-        Ok(())
+        Ok(result)
     }
 
     fn close(&mut self) {
@@ -100,24 +105,32 @@ fn initialise_directory(path_buf: PathBuf) -> GameResult<Vec<DirectoryNode>>{
     Ok(ret)
 }
 
-fn recurse_click_check_direc (directory: &mut [DirectoryNode], mouse_pos: Point2<f32>) -> GameResult<()> {
+fn recurse_click_check_direc (directory: &mut [DirectoryNode], mouse_pos: Point2<f32>) -> GameResult<Option<String>> {
+
+    let mut file_type_result: Option<String> = None;
+
     for direc in directory.iter_mut() {
         if direc.click_rect.contains(mouse_pos) {
             
         //Clicking the rect
             match direc.opened {
                 false => {
-                    direc.open()?;
+                    if direc.open()? {
+                        //If true then it is a file not a folder
+                        file_type_result = Some(direc.entry.path().to_str().unwrap().to_owned());
+                    }
                 }
                 _ => direc.close(),
             }
         }
-        if !direc.children.is_empty() {
+        if !direc.children.is_empty(){
             //Recurse
-            recurse_click_check_direc(&mut direc.children, mouse_pos)?;
+            if let Some(res) = recurse_click_check_direc(&mut direc.children, mouse_pos)? {
+                file_type_result = Some(res);
+            }
         }
     }
-    Ok(())
+    Ok(file_type_result)
 }
 
 struct TextWindow {
@@ -473,8 +486,12 @@ impl event::EventHandler<ggez::GameError> for MainState {
             //Mouse button pressed
             let mouse_pos = ctx.mouse.position();
             
-            recurse_click_check_direc(&mut self.top_level_directory, mouse_pos)?;
-
+            let click_direc_result = recurse_click_check_direc(&mut self.top_level_directory, mouse_pos)?;
+            if let Some(res) = click_direc_result {
+                //There was a file pressed, reload the window
+                println!("here");
+                self.win_mut().load_from_file(res)?;
+            }
 
             /* - Not used
             let mouse_pos = ctx.mouse.position();
